@@ -1,0 +1,107 @@
+﻿<!doctype html>
+<html lang="el">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Bibi Planner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="/config.js"></script>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div class="bg-noise"></div>
+    <main class="app is-hidden">
+      <header class="top">
+        <div>
+          <h1>Bibi Planner</h1>
+          <p class="sub">Στήσε το πρόγραμμα της μέρας σου σαν παιχνίδι.</p>
+        </div>
+        <div class="top-actions">
+          <button id="loginBtn" class="btn ghost">Σύνδεση Discord</button>
+          <span id="userBadge" class="user-badge"></span>
+          <button id="resetBtn" class="btn ghost">Ξανά από την αρχή</button>
+          <button id="addBtn" class="btn">+ Νέα δραστηριότητα</button>
+        </div>
+      </header>
+
+      <section class="board">
+        <div class="timeline">
+          <div class="timeline-header">
+            <div class="controls">
+              <button id="splitBtn" class="btn ghost" disabled>Split</button>
+              <button id="deleteBtn" class="btn ghost" disabled>Delete</button>
+            </div>
+          </div>
+          <div id="dayTrack" class="day-track" aria-label="Day timeline"></div>
+          <div id="dayScale" class="day-scale" aria-hidden="true"></div>
+        </div>
+
+        <aside class="panel">
+          <h2>Σήμερα</h2>
+          <div id="emptyState" class="empty">
+            Ξεκίνα προσθέτοντας μια δραστηριότητα.
+          </div>
+          <ul id="taskList" class="task-list"></ul>
+        </aside>
+      </section>
+    </main>
+
+    <section id="welcome" class="welcome">
+      <div class="welcome-card">
+        <div class="badge">Start</div>
+        <h2>Τι θα κάνεις σήμερα;</h2>
+        <p>Διάλεξε κάτι γρήγορα ή γράψε κάτι δικό σου.</p>
+        <div class="quick-picks">
+          <button class="chip pick">Διάβασμα</button>
+          <button class="chip pick">Γυμναστική</button>
+          <button class="chip pick">Φαγητό</button>
+          <button class="chip pick">Δουλειά</button>
+          <button class="chip pick">Βόλτα</button>
+        </div>
+        <form id="firstForm" class="first-form">
+          <label>
+            Δραστηριότητα
+            <input id="firstTitle" type="text" maxlength="40" placeholder="π.χ. Μαθήματα" required />
+          </label>
+          <label>
+            Πόση ώρα (λεπτά)
+            <input id="firstMinutes" type="number" min="5" max="480" step="5" value="60" required />
+          </label>
+          <button type="submit" class="btn primary">Πρόσθεσε στο πρόγραμμα</button>
+        </form>
+        <div class="draft">
+          <h3>Blocks που θα μπουν</h3>
+          <div id="draftEmpty" class="empty">Δεν έχεις προσθέσει κάτι ακόμα.</div>
+          <ul id="draftList" class="task-list draft-list"></ul>
+        </div>
+        <button id="enterBtn" class="btn primary" disabled>Πήγαινε στον planner</button>
+      </div>
+    </section>
+
+    <dialog id="taskDialog" class="dialog">
+      <form id="taskForm" method="dialog">
+        <h3>Νέα δραστηριότητα</h3>
+        <label>
+          Τι θα κάνεις σήμερα;
+          <input id="taskTitle" type="text" maxlength="40" required />
+        </label>
+        <label>
+          Πόση ώρα (λεπτά);
+          <input id="taskMinutes" type="number" min="5" max="480" step="5" value="60" required />
+        </label>
+        <menu class="dialog-actions">
+          <button type="reset" class="btn ghost">Άκυρο</button>
+          <button type="submit" class="btn primary">Προσθήκη</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <script src="app.js"></script>
+  </body>
+</html>
