@@ -487,3 +487,56 @@ h1 {
     align-items: flex-start;
   }
 }
+
+@media (max-width: 640px) {
+  .app {
+    padding: 20px 16px 40px;
+  }
+
+  .top-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  #loginBtn,
+  #resetBtn,
+  #addBtn,
+  .user-badge {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .timeline {
+    padding: 16px;
+  }
+
+  .timeline-header .controls {
+    width: 100%;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+
+  .day-track {
+    height: 120px;
+  }
+
+  .task-block {
+    height: 76px;
+    top: 20px;
+  }
+
+  .panel {
+    padding: 16px;
+  }
+
+  .task-item {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .task-actions {
+    justify-content: flex-start;
+  }
+}

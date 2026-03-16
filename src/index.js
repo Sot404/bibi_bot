@@ -14,6 +14,10 @@ import {
   GatewayIntentBits,
   Partials,
   EmbedBuilder,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  AttachmentBuilder,
 } from "discord.js";
 
 const token = process.env.DISCORD_BOT_TOKEN;
@@ -330,8 +334,24 @@ client.on(Events.InteractionCreate, async (interaction) => {
       await interaction.reply({ content: "Λείπει το APP_BASE_URL.", ephemeral: true });
       return;
     }
+    const bannerPath = path.join(webRoot, "banner.png");
+    const banner = new AttachmentBuilder(bannerPath, { name: "banner.png" });
+    const embed = new EmbedBuilder()
+      .setTitle("Bibi Planner")
+      .setDescription("Στήσε το πρόγραμμα της μέρας σου σαν παιχνίδι.")
+      .setImage("attachment://banner.png");
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setLabel("Πήγαινε στον planner")
+        .setStyle(ButtonStyle.Link)
+        .setURL(`${appBaseUrl}/planner`)
+    );
+
     await interaction.reply({
-      content: `Άνοιξε τον planner εδώ: ${appBaseUrl}/planner`,
+      embeds: [embed],
+      files: [banner],
+      components: [row],
       ephemeral: true,
     });
     return;
