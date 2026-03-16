@@ -1,27 +1,125 @@
 ﻿import "dotenv/config";
 import http from "http";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 import { DateTime } from "luxon";
-import { Client, GatewayIntentBits, Partials, EmbedBuilder, Events } from "discord.js";
+import { createClient } from "@supabase/supabase-js";
+import {
+  REST,
+  Routes,
+  SlashCommandBuilder,
+  Events,
+  Client,
+  GatewayIntentBits,
+  Partials,
+  EmbedBuilder,
+} from "discord.js";
 
 const token = process.env.DISCORD_BOT_TOKEN;
 const guildId = process.env.GUILD_ID;
 const channelId = process.env.CHANNEL_ID;
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const appId = process.env.DISCORD_APP_ID;
+const appBaseUrl = process.env.APP_BASE_URL;
 
 if (!token || !guildId || !channelId) {
   console.error("Missing env vars. Please set DISCORD_BOT_TOKEN, GUILD_ID, CHANNEL_ID in .env");
   process.exit(1);
 }
 
-// Web service keep-alive endpoint (required by Render Web Service)
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.warn("Supabase env vars missing. Bot data features will be disabled.");
+}
+
+const supabase =
+  supabaseUrl && supabaseServiceKey
+    ? createClient(supabaseUrl, supabaseServiceKey, { auth: { persistSession: false } })
+    : null;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const webRoot = path.join(__dirname, "..", "web");
+
+function contentTypeFor(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".html") return "text/html; charset=utf-8";
+  if (ext === ".css") return "text/css; charset=utf-8";
+  if (ext === ".js") return "application/javascript; charset=utf-8";
+  if (ext === ".svg") return "image/svg+xml";
+  if (ext === ".png") return "image/png";
+  if (ext === ".jpg" || ext === ".jpeg") return "image/jpeg";
+  if (ext === ".gif") return "image/gif";
+  return "application/octet-stream";
+}
+
+// Web service HTTP server (Render Web Service)
 const port = process.env.PORT || 8080;
 http
-  .createServer((req, res) => {
-    res.writeHead(200, { "Content-Type": "text/plain" });
-    res.end("Bot is alive!\n");
+  .createServer(async (req, res) => {
+    try {
+      const url = new URL(req.url, `http://${req.headers.host}`);
+      if (url.pathname === "/config.js") {
+        res.writeHead(200, { "Content-Type": "application/javascript; charset=utf-8" });
+        res.end(
+          `window.__SUPABASE_URL__=${JSON.stringify(process.env.SUPABASE_URL || "")};` +
+            `window.__SUPABASE_ANON_KEY__=${JSON.stringify(
+              process.env.SUPABASE_ANON_KEY || ""
+            )};`
+        );
+        return;
+      }
+      if (url.pathname === "/health") {
+        res.writeHead(200, { "Content-Type": "text/plain" });
+        res.end("ok\n");
+        return;
+      }
+
+      let reqPath = url.pathname === "/" ? "/index.html" : url.pathname;
+      if (reqPath === "/planner") reqPath = "/index.html";
+
+      const safePath = path.normalize(reqPath).replace(/^(\.\.[/\\])+/, "");
+      const filePath = path.join(webRoot, safePath);
+
+      if (!filePath.startsWith(webRoot)) {
+        res.writeHead(403);
+        res.end("Forbidden");
+        return;
+      }
+
+      const data = await fs.readFile(filePath);
+      res.writeHead(200, { "Content-Type": contentTypeFor(filePath) });
+      res.end(data);
+    } catch (err) {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("Not found");
+    }
   })
   .listen(port, () => {
     console.log(`HTTP server listening on port ${port}`);
   });
+
+// Slash commands
+async function registerCommands() {
+  if (!appId || !guildId) {
+    console.warn("Missing DISCORD_APP_ID or GUILD_ID, slash commands not registered.");
+    return;
+  }
+
+  const commands = [
+    new SlashCommandBuilder().setName("plan").setDescription("Άνοιξε τον planner"),
+    new SlashCommandBuilder()
+      .setName("program")
+      .setDescription("Δείξε το πρόγραμμα ενός χρήστη")
+      .addUserOption((opt) =>
+        opt.setName("user").setDescription("Ο χρήστης").setRequired(true)
+      ),
+  ].map((c) => c.toJSON());
+
+  const rest = new REST({ version: "10" }).setToken(token);
+  await rest.put(Routes.applicationGuildCommands(appId, guildId), { body: commands });
+  console.log("Slash commands registered.");
+}
 
 function parseGifList(value) {
   return (value || "")
@@ -67,6 +165,8 @@ const ATHENS_TZ = "Europe/Athens";
 
 const WISH_HOUR = 11;
 const WISH_MINUTE = 11;
+let wishTimer = null;
+let wishSafetyTimer = null;
 let lastWishDate = null;
 let notifyChannel = null;
 
@@ -93,19 +193,31 @@ function isQuietHours() {
   return hour >= QUIET_HOURS_START && hour < QUIET_HOURS_END;
 }
 
-function shouldSendWish() {
-  const now = DateTime.now().setZone(ATHENS_TZ);
-  const dateKey = now.toISODate();
-  if (now.hour !== WISH_HOUR || now.minute !== WISH_MINUTE) return false;
-  if (lastWishDate === dateKey) return false;
-  lastWishDate = dateKey;
-  return true;
-}
-
 async function tickWish() {
   if (!notifyChannel) return;
-  if (!shouldSendWish()) return;
   await notifyChannel.send({ content: "11:11 κάνε ευχή!" });
+}
+
+function scheduleWish() {
+  if (wishTimer) clearTimeout(wishTimer);
+
+  const now = DateTime.now().setZone(ATHENS_TZ);
+  const dateKey = now.toISODate();
+  const inWishMinute =
+    now.hour === WISH_HOUR && now.minute === WISH_MINUTE;
+
+  if (inWishMinute && lastWishDate !== dateKey) {
+    lastWishDate = dateKey;
+    tickWish().catch((err) => console.error("wish tick error:", err));
+  }
+
+  let target = now.set({ hour: WISH_HOUR, minute: WISH_MINUTE, second: 0, millisecond: 0 });
+  if (now >= target) target = target.plus({ days: 1 });
+  const delayMs = Math.max(0, target.diff(now).as("milliseconds"));
+
+  wishTimer = setTimeout(() => {
+    scheduleWish();
+  }, delayMs);
 }
 
 function buildMentions(guild, excludeIds) {
@@ -178,6 +290,7 @@ async function maybeSend(channel, guild, member, prev, next, minecraftGifList) {
 
 client.once(Events.ClientReady, async () => {
   console.log(`Logged in as ${client.user.tag}`);
+  await registerCommands().catch((err) => console.error("registerCommands error:", err));
 
   const guild = await client.guilds.fetch(guildId);
   const channel = await guild.channels.fetch(channelId);
@@ -200,10 +313,82 @@ client.once(Events.ClientReady, async () => {
 
   console.log(`Tracking ${members.size} members.`);
 
-  // Check every 30s for the 11:11 wish
-  setInterval(() => {
-    tickWish().catch((err) => console.error("wish tick error:", err));
-  }, 30_000);
+  // Schedule the 11:11 wish precisely
+  scheduleWish();
+  if (wishSafetyTimer) clearInterval(wishSafetyTimer);
+  // Safety check to recover from timer drift or missed scheduling
+  wishSafetyTimer = setInterval(() => {
+    scheduleWish();
+  }, 5 * 60 * 1000);
+});
+
+client.on(Events.InteractionCreate, async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+
+  if (interaction.commandName === "plan") {
+    if (!appBaseUrl) {
+      await interaction.reply({ content: "Λείπει το APP_BASE_URL.", ephemeral: true });
+      return;
+    }
+    await interaction.reply({
+      content: `Άνοιξε τον planner εδώ: ${appBaseUrl}/planner`,
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (interaction.commandName === "program") {
+    if (!supabase) {
+      await interaction.reply({ content: "Supabase δεν είναι ρυθμισμένο.", ephemeral: true });
+      return;
+    }
+
+    const user = interaction.options.getUser("user", true);
+    const { data: profile, error: profileError } = await supabase
+      .from("profiles")
+      .select("user_id")
+      .eq("discord_id", user.id)
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      await interaction.reply({
+        content: "Δεν βρέθηκε λογαριασμός για αυτόν τον χρήστη. Πρέπει να κάνει login στον planner.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const today = DateTime.now().setZone(ATHENS_TZ).toISODate();
+    const { data: schedule, error } = await supabase
+      .from("schedules")
+      .select("id, schedule_date, tasks:tasks(title,minutes,start_minute)")
+      .eq("user_id", profile.user_id)
+      .eq("schedule_date", today)
+      .maybeSingle();
+
+    if (error || !schedule) {
+      await interaction.reply({
+        content: "Δεν υπάρχει πρόγραμμα για σήμερα.",
+        ephemeral: true,
+      });
+      return;
+    }
+
+    const tasks = (schedule.tasks || []).sort((a, b) => a.start_minute - b.start_minute);
+    const lines = tasks.map((t) => {
+      const startH = String(Math.floor(t.start_minute / 60)).padStart(2, "0");
+      const startM = String(t.start_minute % 60).padStart(2, "0");
+      const end = t.start_minute + t.minutes;
+      const endH = String(Math.floor(end / 60)).padStart(2, "0");
+      const endM = String(end % 60).padStart(2, "0");
+      return `• ${startH}:${startM}-${endH}:${endM} — ${t.title}`;
+    });
+
+    await interaction.reply({
+      content: `Πρόγραμμα για ${user.tag}:\n${lines.join("\n")}`,
+      ephemeral: true,
+    });
+  }
 });
 
 client.on("presenceUpdate", async (oldPresence, newPresence) => {
